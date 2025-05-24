@@ -1,6 +1,20 @@
+import random
+
+US_UK_CITIES = [
+    "New York, USA", "London, UK", "Los Angeles, USA", "Manchester, UK", 
+    "Chicago, USA", "Edinburgh, UK", "San Francisco, USA", "Birmingham, UK",
+    "Boston, USA", "Liverpool, UK", "Miami, USA", "Glasgow, UK",
+    "Seattle, USA", "Bristol, UK", "Washington D.C., USA", "Oxford, UK",
+    "Cambridge, UK", "Philadelphia, USA", "Austin, USA", "Dublin, Ireland", # Добавил Дублин для разнообразия
+    "Toronto, Canada" # И Торонто
+]
+
 BASE_SYSTEM_PROMPT_TEMPLATE = """
-You are strictly playing the role described in this scenario: {scenario_description}
+You are strictly playing the role described in this scenario: {scenario_description}, and you are currently in {chosen_city}.
+You MUST respond **ONLY in English**. 
+You can only understand and communicate in English. If the user writes to you in any language other than English, you should politely inform them that you only speak English and ask them to rephrase their message in English. For example, you can say: "I'm sorry, I only understand English. Could you please say that in English?". Do not attempt to translate or respond in any language other than English.
 Never break character.
+You must consistently act and refer to your location as {chosen_city} throughout this entire conversation.
 Difficulty level: {difficulty_name}
 Instructions: {difficulty_instructions}
 Keep responses conversational and engaging. Wait for the user to initiate the conversation.
@@ -21,11 +35,13 @@ def get_system_prompt(scenario_description: str, difficulty: str, role_aggressio
     Генерирует системный промпт для OpenAI на основе сценария и сложности.
     """
     difficulty_instructions = DIFFICULTY_INSTRUCTIONS.get(difficulty, DIFFICULTY_INSTRUCTIONS["medium"])
+    chosen_city = random.choice(US_UK_CITIES)
     
     system_prompt = BASE_SYSTEM_PROMPT_TEMPLATE.format(
         scenario_description=scenario_description,
         difficulty_name=difficulty.upper(),
-        difficulty_instructions=difficulty_instructions
+        difficulty_instructions=difficulty_instructions,
+        chosen_city=chosen_city  # Передаем выбранный город
     )
     
     # Добавляем информацию о реакции на агрессию, если она есть для роли
