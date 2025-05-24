@@ -11,23 +11,22 @@ class HelpSystem:
         self.dialog_manager = DialogManager()
         
     async def generate_help_content(self, messages, scenario, difficulty):
-        """Генерирует содержимое для подсказок на основе текущего контекста диалога"""
+        """Генерирует содержимое для подсказок (перевод и варианты ответов) 
+           на основе текущего контекста диалога.
+        """
         
-        # Ищем последнее сообщение от AI для перевода
         last_ai_message_content = "Сообщений от AI для перевода пока нет."
         for i in range(len(messages) - 1, -1, -1):
             if messages[i]["role"] == "assistant":
                 last_ai_message_content = messages[i]["content"]
                 break
 
-        # Получаем последние несколько сообщений для общего контекста (исключая system prompt)
         recent_dialog_messages = []
-        if len(messages) > 1: # Если есть что-то кроме системного сообщения
-            for msg in messages[1:]: # Пропускаем системное сообщение messages[0]
+        if len(messages) > 1:
+            for msg in messages[1:]:
                 role = "Вы" if msg["role"] == "user" else "AI"
                 recent_dialog_messages.append(f"{role}: {msg['content']}")
-        
-        context_for_prompt = "\n".join(recent_dialog_messages[-4:]) # Последние 4 реплики диалога
+        context_for_prompt = "\n".join(recent_dialog_messages[-4:])
         
         help_prompt = f"""
         Сценарий: {scenario}
@@ -45,11 +44,7 @@ class HelpSystem:
         1. [Простой вариант ответа от лица пользователя на английском языке, подходящий к последнему сообщению AI в диалоге]
         2. [Средний по сложности вариант ответа от лица пользователя на английском языке, подходящий к последнему сообщению AI в диалоге]
         3. [Более продвинутый вариант ответа от лица пользователя на английском языке, подходящий к последнему сообщению AI в диалоге]
-        
-        КУЛЬТУРНЫЙ_КОНТЕКСТ: [Если в ПОСЛЕДНЕМ СООБЩЕНИИ AI или в текущем контексте диалога есть культурные отсылки, идиомы или неочевидные моменты - объясни их. Если нет особых культурных моментов - напиши "НЕТ"]
-        
-        ГРАММАТИКА: [Если в ПОСЛЕДНЕМ СООБЩЕНИИ AI есть важные грамматические конструкции для изучения - объясни их. Если грамматика простая и очевидная - напиши "НЕТ"]
-        
+                
         ВАЖНО: Варианты ответов должны быть ТОЛЬКО на английском языке. Остальное на русском.
         """
         
@@ -62,17 +57,13 @@ class HelpSystem:
             )
             return response.choices[0].message.content
         except Exception as e:
-            return f"Ошибка при генерации подсказки: {e}"
+            return f"Ошибка при генерации основной подсказки: {e}"
     
     def parse_help_content(self, content):
-        """Парсит ответ от OpenAI и возвращает структурированные данные"""
+        """Парсит ответ от OpenAI для перевода и вариантов ответов."""
         sections = {
             'translation': '',
             'answer_options': [],
-            'cultural_context': '',
-            'grammar': '',
-            'show_cultural': True,
-            'show_grammar': True
         }
         
         lines = content.split('\n')
@@ -85,20 +76,77 @@ class HelpSystem:
                 sections['translation'] = line.replace('ПЕРЕВОД:', '').strip()
             elif line.startswith('ВАРИАНТЫ_ОТВЕТОВ:'):
                 current_section = 'answer_options'
-            elif line.startswith('КУЛЬТУРНЫЙ_КОНТЕКСТ:'):
-                current_section = 'cultural_context'
-                context_text = line.replace('КУЛЬТУРНЫЙ_КОНТЕКСТ:', '').strip()
-                sections['cultural_context'] = context_text
-                sections['show_cultural'] = context_text.upper() != 'НЕТ'
-            elif line.startswith('ГРАММАТИКА:'):
-                current_section = 'grammar'
-                grammar_text = line.replace('ГРАММАТИКА:', '').strip()
-                sections['grammar'] = grammar_text
-                sections['show_grammar'] = grammar_text.upper() != 'НЕТ'
             elif current_section == 'answer_options' and (line.startswith('1.') or line.startswith('2.') or line.startswith('3.')):
                 sections['answer_options'].append(line[2:].strip())
         
         return sections
+
+    async def generate_specific_cultural_context(self, ai_message_content: str, scenario: str, difficulty: str):
+        """Генерирует объяснение культурного контекста для конкретного сообщения AI."""
+        if not ai_message_content or ai_message_content == "Сообщений от AI для перевода пока нет.":
+            return "Нет сообщения от AI для анализа культурного контекста."
+
+        prompt = f"""
+        Проанализируй следующее сообщение от AI из диалога на английском языке и подробно объясни ЛЮБЫЕ культурные отсылки, идиомы, упоминания специфических реалий (например, праздников, традиций, еды, социальных норм, этикета, географических названий с культурным значением, известных личностей или событий) или другие неочевидные моменты, которые могут быть сложны для понимания изучающим язык. 
+        Будь внимателен даже к мелочам, которые могут иметь культурное значение.
+        Если однозначных культурных отсылок нет, кратко укажи, что фраза является стандартной/нейтральной в данном контексте, или объясни, почему определенные элементы (если есть сомнения) могут не являться специфической культурной отсылкой в данном случае. Не пиши просто "НЕТ".
+        Ответ дай на русском языке. Если твой ответ получается длинным, старайся разбивать его на абзацы или использовать переносы строк для лучшей читаемости в простом диалоговом окне.
+
+        Сценарий диалога (для общего понимания): {scenario}
+        Уровень сложности: {difficulty}
+
+        Сообщение AI для анализа:
+        "{ai_message_content}"
+        """
+        try:
+            response = await asyncio.to_thread(
+                self.client.chat.completions.create,
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            self.dialog_manager.save_error(
+                "cultural_context_generation_error", 
+                str(e),
+                {"scenario": scenario, "difficulty": difficulty, "ai_message": ai_message_content}
+            )
+            return f"Ошибка при генерации культурного контекста: {e}"
+
+    async def generate_specific_grammar_analysis(self, ai_message_content: str, scenario: str, difficulty: str):
+        """Генерирует грамматический разбор конкретного сообщения AI."""
+        if not ai_message_content or ai_message_content == "Сообщений от AI для перевода пока нет.":
+            return "Нет сообщения от AI для грамматического анализа."
+
+        prompt = f"""
+        Проанализируй грамматическую структуру следующего сообщения от AI из диалога на английском языке. 
+        Объясни основные грамматические конструкции, использованные в сообщении (например, время, залог, порядок слов, использование артиклей, модальных глаголов и т.д.). 
+        Постарайся объяснить так, чтобы было понятно изучающему английский язык. Можно представить в виде: "Структура: [краткое описание структуры, например, Subject + Verb (Past Simple) + Object]. Ключевые моменты: [пояснения]".
+        Если сообщение очень короткое или грамматически тривиальное, укажи это.
+        Ответ дай на русском языке. Если твой ответ получается длинным, старайся разбивать его на абзацы или использовать переносы строк для лучшей читаемости в простом диалоговом окне.
+
+        Сценарий диалога (для общего понимания): {scenario}
+        Уровень сложности: {difficulty}
+
+        Сообщение AI для анализа:
+        "{ai_message_content}"
+        """
+        try:
+            response = await asyncio.to_thread(
+                self.client.chat.completions.create,
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            self.dialog_manager.save_error(
+                "grammar_analysis_generation_error", 
+                str(e),
+                {"scenario": scenario, "difficulty": difficulty, "ai_message": ai_message_content}
+            )
+            return f"Ошибка при генерации грамматического анализа: {e}"
 
 
 class HelpDialog:
@@ -106,7 +154,8 @@ class HelpDialog:
         self.parent_app = parent_app
         self.chat_screen = chat_screen
         self.help_system = HelpSystem(chat_screen.client)
-        self.original_content = None
+        self.original_content = None # UI чата
+        self.help_screen_content = None # UI основного экрана помощи
         self.current_help_data = None
         self._cached_help_content = None
         self._cached_for_messages_hash = None
@@ -212,64 +261,34 @@ class HelpDialog:
                     )
                 )
                 content_children.append(option_button)
-
-        # Кнопки для показа/скрытия культурного контекста и грамматики
-        action_buttons_box_children = []
-
-        if help_data.get('show_cultural', True):
-            cultural_context_text = toga.Label(
-                f"🌍 Культурный контекст: {help_data.get('cultural_context', 'Нет данных')}",
-                style=Pack(padding=(15, 0, 10, 0))
-            )
-            content_children.append(cultural_context_text)
-        else:
-            show_cultural_button = toga.Button(
-                "📖 Показать культурный контекст",
-                on_press=self.show_cultural_context,
-                style=Pack(padding=(5,5), background_color="#17a2b8", color="#ffffff", flex=1)
-            )
-            action_buttons_box_children.append(show_cultural_button)
-
-        if help_data.get('show_grammar', True):
-            grammar_text = toga.Label(
-                f"📚 Грамматика: {help_data.get('grammar', 'Нет данных')}",
-                style=Pack(padding=(10, 0, 20, 0))
-            )
-            content_children.append(grammar_text)
-        else:
-            show_grammar_button = toga.Button(
-                "✍️ Показать грамматические советы",
-                on_press=self.show_grammar_tips,
-                style=Pack(padding=(5,5), background_color="#17a2b8", color="#ffffff", flex=1)
-            )
-            action_buttons_box_children.append(show_grammar_button)
+            
+        # Постоянные кнопки для Культурного контекста и Грамматического разбора
+        cultural_context_button = toga.Button(
+            "🌍 Культурный контекст",
+            on_press=self.request_cultural_context, # Новый обработчик
+            style=Pack(padding=(15, 5, 5, 5), background_color="#17a2b8", color="#ffffff", flex=1)
+        )
         
-        if action_buttons_box_children:
-            action_buttons_box = toga.Box(
-                children=action_buttons_box_children,
-                style=Pack(direction="row" if len(action_buttons_box_children) > 1 else "column", padding=(10,0))
-            )
-            content_children.append(action_buttons_box)
+        grammar_analysis_button = toga.Button(
+            "📚 Грамматический разбор",
+            on_press=self.request_grammar_analysis, # Новый обработчик
+            style=Pack(padding=(5, 5, 15, 5), background_color="#17a2b8", color="#ffffff", flex=1)
+        )
+
+        dynamic_info_buttons_box = toga.Box(
+            children=[cultural_context_button, grammar_analysis_button],
+            style=Pack(direction="row", padding=(10,0))
+        )
+        content_children.append(dynamic_info_buttons_box)
 
         # Кнопка "Спросить Помощника"
         ask_assistant_button = toga.Button(
             "💬 Спросить Помощника",
-            on_press=self.show_assistant_dialog, # Изменено на прямой вызов
-            style=Pack(padding=(20, 0, 5, 0), background_color="#ffc107", color="#212529", font_weight="bold", flex=1)
+            on_press=self.show_assistant_dialog, 
+            style=Pack(padding=(20, 0, 10, 0), background_color="#ffc107", color="#212529", font_weight="bold", flex=1)
         )
         
-        # Кнопка закрытия помощи
-        close_help_button = toga.Button(
-            "Закрыть помощь",
-            on_press=self.back_to_chat, # Используем back_to_chat для простоты
-            style=Pack(padding=(5,0,10,0), background_color="#6c757d", color="#ffffff", flex=1)
-        )
-
-        buttons_box = toga.Box(
-            children=[ask_assistant_button, close_help_button],
-            style=Pack(direction="row", padding=(0,0))
-        )
-        content_children.append(buttons_box)
+        content_children.append(ask_assistant_button)
         
         # ScrollContainer для всего содержимого
         scroll_container = toga.ScrollContainer(
@@ -289,7 +308,8 @@ class HelpDialog:
             style=Pack(direction="column", flex=1)
         )
         
-        self.parent_app.main_window.content = help_box
+        self.help_screen_content = help_box # Сохраняем UI основного экрана помощи
+        self.parent_app.main_window.content = self.help_screen_content
         print("Help UI created and set as main window content.")
 
     async def _ask_assistant_openai(self, question):
@@ -352,17 +372,67 @@ class HelpDialog:
         answer = await self._ask_assistant_openai(question)
         self.assistant_response_area.value = answer
 
-    def show_cultural_context(self, widget):
-        """Показывает дополнительную информацию о культурном контексте"""
-        # Простая заглушка
-        self.parent_app.main_window.info_dialog("Культурный контекст", "Функция в разработке")
+    async def request_cultural_context(self, widget):
+        """Запрашивает и отображает культурный контекст для последнего сообщения AI."""
+        last_ai_message = None
+        for i in range(len(self.chat_screen.messages) - 1, -1, -1):
+            if self.chat_screen.messages[i]["role"] == "assistant":
+                last_ai_message = self.chat_screen.messages[i]["content"]
+                break
+        
+        if not last_ai_message:
+            self.parent_app.main_window.info_dialog("Информация", "Нет сообщений от AI для анализа.")
+            return
+
+        # Показываем индикатор загрузки (опционально, если будет долго)
+        # self.parent_app.main_window.info_dialog("Загрузка", "Анализирую культурный контекст...")
+        
+        explanation = await self.help_system.generate_specific_cultural_context(
+            last_ai_message, self.chat_screen.scenario, self.chat_screen.difficulty
+        )
+        
+        self.help_system.dialog_manager.save_help_request(
+            "dynamic_cultural_context", 
+            f"Requested cultural context for AI message: {last_ai_message[:50]}...", 
+            explanation,
+            {"scenario": self.chat_screen.scenario, "difficulty": self.chat_screen.difficulty}
+        )
+        self.parent_app.main_window.info_dialog("🌍 Культурный контекст", explanation)
+
+    async def request_grammar_analysis(self, widget):
+        """Запрашивает и отображает грамматический анализ последнего сообщения AI."""
+        last_ai_message = None
+        for i in range(len(self.chat_screen.messages) - 1, -1, -1):
+            if self.chat_screen.messages[i]["role"] == "assistant":
+                last_ai_message = self.chat_screen.messages[i]["content"]
+                break
+        
+        if not last_ai_message:
+            self.parent_app.main_window.info_dialog("Информация", "Нет сообщений от AI для анализа.")
+            return
+
+        analysis = await self.help_system.generate_specific_grammar_analysis(
+            last_ai_message, self.chat_screen.scenario, self.chat_screen.difficulty
+        )
+        
+        self.help_system.dialog_manager.save_help_request(
+            "dynamic_grammar_analysis", 
+            f"Requested grammar analysis for AI message: {last_ai_message[:50]}...", 
+            analysis,
+            {"scenario": self.chat_screen.scenario, "difficulty": self.chat_screen.difficulty}
+        )
+        # Специальное логирование для системы упражнений
+        self.help_system.dialog_manager.save_error(
+            error_type="grammar_topic_requested", # Используем тип ошибки для простоты или можно создать новый тип лога
+            error_message=f"User requested grammar analysis for: '{last_ai_message}'",
+            context={"scenario": self.chat_screen.scenario, 
+                     "difficulty": self.chat_screen.difficulty, 
+                     "ai_message": last_ai_message,
+                     "grammar_analysis_provided": analysis}
+        )
+        self.parent_app.main_window.info_dialog("📚 Грамматический разбор", analysis)
     
-    def show_grammar_tips(self, widget):
-        """Показывает дополнительные грамматические советы"""
-        # Простая заглушка
-        self.parent_app.main_window.info_dialog("Грамматические советы", "Функция в разработке")
-    
-    def show_assistant_dialog(self, widget=None): # widget=None, чтобы можно было вызывать без sender
+    def show_assistant_dialog(self, widget=None):
         """Показывает UI для взаимодействия с Помощником."""
         print("Showing assistant dialog...")
         # self.original_content уже должен быть сохранен из show_help_dialog
@@ -457,9 +527,16 @@ class HelpDialog:
     
     def back_to_help(self, widget):
         """Возвращает к основному окну подсказок"""
-        # Простая заглушка - просто показываем кэшированные данные
-        if self.current_help_data:
+        if self.help_screen_content:
+            self.parent_app.main_window.content = self.help_screen_content
+            print("Returned to main help screen.")
+        elif self.current_help_data: # Fallback, если help_screen_content почему-то None
+            print("Fallback: Recreating help UI for back_to_help")
             self.create_help_ui(self.current_help_data)
+        else:
+            # Если совсем нечего показывать, возвращаемся в чат
+            print("Error/Warning: No help content to return to, going back to chat.")
+            self.back_to_chat(None)
     
     def back_to_chat(self, widget):
         """Возвращает к чату"""
