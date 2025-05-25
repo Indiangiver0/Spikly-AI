@@ -1750,4 +1750,3 @@ if __name__ == '__main__':
     print("DEBUG: Starting Flet app...")
     ft.app(target=main, view=ft.AppView.WEB_BROWSER, port=8550, host="0.0.0.0")
 
-</rewritten_file> 
