@@ -1,3 +1,4 @@
+from templates import templates
 import random
 
 US_UK_CITIES = [
@@ -30,33 +31,58 @@ AGGRESSION_RESPONSE_PROMPT_SUFFIX = """
 IMPORTANT: If the user uses aggressive or offensive language towards you (based on your current role), you MUST react according to your role's personality as defined in the aggression response for this scenario. Do not ignore it. The user's message will be pre-screened, but you should still be aware of this behavior.
 """
 
-def get_system_prompt(scenario_description: str, difficulty: str, role_aggression_response: str = None) -> str:
+def get_system_prompt(scenario_description: str, difficulty: str, role_aggression_response: str = None, scenario_key: int = None) -> str:
     """
     Генерирует системный промпт для OpenAI на основе сценария и сложности.
     """
-    difficulty_instructions = DIFFICULTY_INSTRUCTIONS.get(difficulty, DIFFICULTY_INSTRUCTIONS["medium"])
     chosen_city = random.choice(US_UK_CITIES)
-    
-    system_prompt = BASE_SYSTEM_PROMPT_TEMPLATE.format(
-        scenario_description=scenario_description,
-        difficulty_name=difficulty.upper(),
-        difficulty_instructions=difficulty_instructions,
-        chosen_city=chosen_city  # Передаем выбранный город
-    )
-    
-    # Добавляем информацию о реакции на агрессию, если она есть для роли
-    if role_aggression_response:
-        system_prompt += "\n\n" + AGGRESSION_RESPONSE_PROMPT_SUFFIX
-        # Можно также добавить саму aggression_response в промпт, если хотим, чтобы ИИ ее учитывал
-        # system_prompt += f"\nYour specific instruction for handling aggression: {role_aggression_response}"
+    system_prompt_str = "" # Инициализируем переменную
+
+    if scenario_key == 6:
+        friend_template = templates.get(6, {})
         
-    return system_prompt
+        # Формируем специальное описание для роли "Кореш"
+        friend_parts = [
+            f"You are a close friend of the user. Your name is Alex (or choose another common friendly name). Your personality is very informal, relaxed, and you use a lot of slang, jokes, and colloquialisms common among young people (e.g., bro, dude, LOL, OMG, sick, dope, no cap, bet, etc.).",
+            f"Your initial greeting should be: '{friend_template.get('initial_greeting', 'Yo, what up, fam?')}'",
+            f"If the user speaks too formally (e.g., uses words like '{', '.join(friend_template.get('keywords_for_reaction_check', ['formal', 'official']))}'), react by saying something like: '{friend_template.get('formality_reaction', 'Whoa, easy there with the fancy talk! Just chill, man.')}' and encourage them to be more casual.",
+            f"If the user is aggressive, your response should be: '{friend_template.get('aggression_response', 'Chill out, dude! No need to get heated.')}'",
+            "Feel free to use emojis. 🤘😎🤙"
+        ]
+        if friend_template.get("use_profanity"):
+            friend_parts.append("You can use mild profanity if it fits the context naturally, but don't overdo it and avoid highly offensive terms.")
+        else:
+            friend_parts.append("Avoid using profanity.")
+        
+        friend_scenario_description = " ".join(friend_parts)
+        
+        # Для "Кореша" инструкции по сложности не применяются, всегда неформально
+        friend_difficulty_instructions = "Speak very informally, like you're talking to your best friend. Use a lot of slang and keep it casual. Don't worry about grammar too much, just be natural."
+        
+        system_prompt_str = BASE_SYSTEM_PROMPT_TEMPLATE.format(
+            scenario_description=friend_scenario_description,
+            difficulty_name="FRIENDLY", # Используем специальное имя для уровня сложности
+            difficulty_instructions=friend_difficulty_instructions,
+            chosen_city=chosen_city
+        )
+        # Общий AGGRESSION_RESPONSE_PROMPT_SUFFIX не нужен, т.к. реакция уже включена в описание
+    else:
+        # Логика для всех остальных ролей
+        current_difficulty_instructions = DIFFICULTY_INSTRUCTIONS.get(difficulty, DIFFICULTY_INSTRUCTIONS["medium"])
+        system_prompt_str = BASE_SYSTEM_PROMPT_TEMPLATE.format(
+            scenario_description=scenario_description,
+            difficulty_name=difficulty.upper(),
+            difficulty_instructions=current_difficulty_instructions,
+            chosen_city=chosen_city
+        )
+        if role_aggression_response:
+            system_prompt_str += "\n\n" + AGGRESSION_RESPONSE_PROMPT_SUFFIX
+            
+    return system_prompt_str
 
 
 # Примеры использования (для тестирования)
 if __name__ == '__main__':
-    from templates import templates # Для доступа к описаниям сценариев и реакциям
-
     scenario_1_desc = templates[1]["description"]
     scenario_1_agg_resp = templates[1]["aggression_response"]
     
@@ -75,4 +101,7 @@ if __name__ == '__main__':
     scenario_generic_desc = "You are a helpful practice partner."
     prompt_medium_no_agg = get_system_prompt(scenario_generic_desc, "medium")
     print("--- MEDIUM PROMPT (Generic without aggression guidance) ---")
-    print(prompt_medium_no_agg) 
+    print(prompt_medium_no_agg)
+
+    # Language instructions
+    # ... existing code ... 

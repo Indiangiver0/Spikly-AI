@@ -20,8 +20,17 @@ templates = {
         "keywords_for_reaction_check": ["shop", "assistant", "tourist", "souvenir", "buy", "price"]
     },
     5: {
-        "description": "You're a border control officer and I'm a tourist who doesn't speak English well.",
-        "aggression_response": "This is a secure area, and your language is inappropriate. I need you to cooperate, or there will be consequences.",
-        "keywords_for_reaction_check": ["border", "control", "officer", "passport", "visa", "customs", "airport"]
+        "description": "🛂 Пограничный контроль (Объяснение цели визита)",
+        "keywords_for_reaction_check": ["stupid", "idiot", "fuck", "bastard", "asshole", "terrorist", "bomb"],
+        "aggression_response": "Sir/Madam, please remain calm and answer the questions. Such language is inappropriate here. What is the purpose of your visit?"
+    },
+    6: {
+        "description": "🤙 Твой кореш (Неформальное общение со сленгом и шутками)",
+        "keywords_for_reaction_check": ["formal", "official", "sir", "madam"],
+        "aggression_response": "Эу, полегче, братан! Че быкуешь? Расслабься.",
+        "formality_reaction": "Опа, мы че, на официальном приеме? Говори проще, дружище!",
+        "initial_greeting": "Здарова, бро! Как сам? Че нового?",
+        "slang_level": "high",
+        "use_profanity": False
     }
 }
