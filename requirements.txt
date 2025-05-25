@@ -1,0 +1,7 @@
+flet>=0.24.0
+openai>=1.0.0
+livekit>=0.11.0
+livekit-agents>=0.8.0
+pyaudio>=0.2.11
+wave
+asyncio 

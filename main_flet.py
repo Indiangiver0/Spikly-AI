@@ -16,6 +16,14 @@ import os
 # В идеале, нужно передавать app через page.session или другим способом.
 global_app_instance = None
 
+# Импорт голосового функционала
+try:
+    from voice_handler import VoiceHandler
+    VOICE_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Voice functionality not available: {e}")
+    VOICE_AVAILABLE = False
+
 class EnglishLearningApp:
     def __init__(self, page: ft.Page):
         global global_app_instance
@@ -50,19 +58,32 @@ class EnglishLearningApp:
         
         # Показываем стартовый экран
         self.show_start_screen()
-        
+
         # Добавляем обработчик закрытия приложения
-        try:
-            if hasattr(self.page, 'window') and self.page.window:
-                self.page.window.on_event = self.on_window_event
-            else:
-                print("⚠️ Window object not available, cleanup on close disabled")
-        except Exception as e:
-            print(f"⚠️ Could not set window event handler: {e}")
+        # self.page.on_window_event = self.on_window_event # Deprecated
+        if hasattr(self.page, 'window') and self.page.window:
+            self.page.window.on_event = self.on_window_event
+            print("Установлен обработчик self.page.window.on_event")
+        else:
+            # Fallback for environments where page.window might not be immediately available
+            # or for older Flet versions, though this specific error points to it being available but handler assignment failing.
+            try:
+                self.page.on_window_event = self.on_window_event
+                print("Установлен обработчик self.page.on_window_event (fallback)")
+            except Exception as e:
+                print(f"⚠️ Не удалось установить обработчик событий окна: {e}")
     
     def on_window_event(self, e):
         """Обработчик событий окна"""
-        if e.data == "close":
+        if isinstance(e, str): # Older Flet versions might pass string data
+            event_data = e
+        elif hasattr(e, 'data'): # Newer Flet versions pass event object with data attribute
+            event_data = e.data
+        else:
+            event_data = str(e) # Fallback
+
+        print(f"Обработано событие окна: {event_data}")
+        if event_data == "close":
             # Очищаем файлы практик при закрытии приложения
             self.cleanup_practice_files()
             print("👋 Приложение закрывается, файлы практик очищены")
@@ -128,6 +149,25 @@ class EnglishLearningApp:
             on_change=self.on_selection_change
         )
         
+        # Контейнер для выбора режима общения
+        communication_label = ft.Text("🗣️ Выберите режим общения:", size=20, weight=ft.FontWeight.W_500)
+        
+        communication_options = [
+            ft.dropdown.Option("text", "💬 Текстовый чат - Обычное общение через сообщения"),
+            ft.dropdown.Option("voice", "🎤 Голосовой чат - Говорите и слушайте ответы (в разработке)")
+        ]
+        
+        self.communication_dropdown = ft.Dropdown(
+            options=communication_options,
+            hint_text="Выберите способ общения...",
+            bgcolor=ft.Colors.WHITE,
+            border_color="#E0E0E0",
+            border_radius=15,
+            content_padding=ft.padding.all(18),
+            text_size=16,
+            on_change=self.on_selection_change
+        )
+        
         # 🚀 УМНАЯ КНОПКА СТАРТ (неактивная по умолчанию)
         self.start_button = ft.ElevatedButton(
             content=ft.Text(
@@ -165,6 +205,10 @@ class EnglishLearningApp:
             difficulty_label,
             ft.Container(height=15),
             self.difficulty_dropdown,
+            ft.Container(height=40),
+            communication_label,
+            ft.Container(height=15),
+            self.communication_dropdown,
             ft.Container(height=50),
             self.start_button,
             ft.Container(height=20),
@@ -202,7 +246,7 @@ class EnglishLearningApp:
     def on_selection_change(self, e):
         """Обработчик изменения выбора - активирует кнопку если все выбрано"""
         # Проверяем выбраны ли и сценарий и сложность
-        if self.scenario_dropdown.value and self.difficulty_dropdown.value:
+        if self.scenario_dropdown.value and self.difficulty_dropdown.value and self.communication_dropdown.value:
             # Активируем кнопку - делаем яркой и кликабельной
             self.start_button.bgcolor = "#25D366"  # Яркий зеленый
             self.start_button.disabled = False  # Можно кликать
@@ -221,7 +265,7 @@ class EnglishLearningApp:
     
     def start_dialog(self, e):
         """Обработчик начала диалога"""
-        if not self.scenario_dropdown.value or not self.difficulty_dropdown.value:
+        if not self.scenario_dropdown.value or not self.difficulty_dropdown.value or not self.communication_dropdown.value:
             return
         
         # Очищаем файлы практик при начале нового диалога
@@ -231,15 +275,16 @@ class EnglishLearningApp:
         selected_template = templates[scenario_key]
         scenario_text = selected_template["description"]
         difficulty = self.difficulty_dropdown.value
+        communication_mode = self.communication_dropdown.value
         
-        self.show_chat_screen(scenario_key, scenario_text, difficulty)
+        self.show_chat_screen(scenario_key, scenario_text, difficulty, communication_mode)
     
     def close_dialog(self, dialog):
         """Закрывает диалог"""
         dialog.open = False
         self.page.update()
     
-    def show_chat_screen(self, scenario_key, scenario, difficulty):
+    def show_chat_screen(self, scenario_key, scenario, difficulty, communication_mode):
         """Показывает экран чата"""
         self.current_screen = "chat"
         
@@ -250,6 +295,7 @@ class EnglishLearningApp:
             scenario_key, 
             scenario, 
             difficulty,
+            communication_mode,
             self.client,
             self.dialog_manager
         )
@@ -1042,13 +1088,14 @@ class EnglishLearningApp:
         self.show_start_screen()
 
 class ChatScreen:
-    def __init__(self, page: ft.Page, app: EnglishLearningApp, scenario_key, scenario, difficulty, client, dialog_manager):
+    def __init__(self, page: ft.Page, app: EnglishLearningApp, scenario_key, scenario, difficulty, communication_mode, client, dialog_manager):
         self.page = page
         self.app = app # Сохраняем ссылку на экземпляр EnglishLearningApp
         self.dialog_id = str(uuid.uuid4())
         self.scenario_key = scenario_key
         self.scenario = scenario
         self.difficulty = difficulty
+        self.communication_mode = communication_mode
         self.client = client
         self.dialog_manager = dialog_manager
         # Передаем созданный OpenAI клиент в DialogManager
@@ -1065,11 +1112,29 @@ class ChatScreen:
         self.message_input = None
         self.hints_display = ft.Text(weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE) # Для отображения подсказок
         
-        # Система помощи
-        self.help_dialog = HelpDialog(self.page, self)
+        # Голосовой функционал
+        self.voice_handler = None
+        self.voice_button = None
+        self.is_voice_mode = (communication_mode == "voice")
         
-        # Настройка системного промпта
-        self.setup_system_prompt()
+        if self.is_voice_mode and VOICE_AVAILABLE:
+            self.voice_handler = VoiceHandler()
+            self.setup_voice_callbacks()
+        
+        # Система помощи
+        self.help_system = HelpSystem(self.client, self.dialog_manager)
+        self.help_dialog = HelpDialog(self.page, self.help_system, self, self.dialog_manager)
+        
+        # Определение системного промпта
+        current_template_details = templates.get(self.scenario_key, {}) # Получаем детали шаблона по ID
+
+        self.system_prompt_content = get_system_prompt(
+            scenario_description=self.scenario, # Это текстовое описание роли, переданное в конструктор
+            difficulty=self.difficulty,
+            role_aggression_response=current_template_details.get("aggression_response"), # Берем из шаблона по ID
+            scenario_key=self.scenario_key # Это ID сценария
+        )
+        self.messages = [{"role": "system", "content": self.system_prompt_content}]
     
     def get_max_hints(self):
         """Получает максимальное количество подсказок"""
@@ -1088,11 +1153,117 @@ class ChatScreen:
         system_content = get_system_prompt(
             scenario_description=self.scenario, 
             difficulty=self.difficulty,
-            role_aggression_response=aggression_response_for_role
+            role_aggression_response=aggression_response_for_role,
+            scenario_key=self.scenario_key # Убедимся, что scenario_key также передается здесь
         )
         
         self.messages = [{"role": "system", "content": system_content}]
     
+    def setup_voice_callbacks(self):
+        """Настраивает колбэки для голосового обработчика"""
+        if not self.voice_handler:
+            return
+            
+        self.voice_handler.on_recording_start = self.on_voice_recording_start
+        self.voice_handler.on_recording_stop = self.on_voice_recording_stop
+        self.voice_handler.on_transcription_ready = self.on_voice_transcription_ready
+    
+    def on_voice_recording_start(self):
+        """Колбэк начала записи голоса"""
+        if self.voice_button:
+            self.voice_button.icon = ft.Icons.STOP
+            self.voice_button.bgcolor = "#F44336"  # Красный
+            self.voice_button.tooltip = "Остановить запись"
+            self.page.update()
+    
+    def on_voice_recording_stop(self):
+        """Колбэк остановки записи голоса"""
+        if self.voice_button:
+            self.voice_button.icon = ft.Icons.MIC
+            self.voice_button.bgcolor = "#4CAF50"  # Зеленый
+            self.voice_button.tooltip = "Начать запись"
+            self.page.update()
+            
+        # Запускаем транскрипцию
+        if self.voice_handler:
+            asyncio.create_task(self.process_voice_transcription())
+    
+    def on_voice_transcription_ready(self, text: str):
+        """Колбэк готовности транскрипции"""
+        # Добавляем транскрибированный текст в поле ввода
+        if self.message_input:
+            self.message_input.value = text
+            self.page.update()
+    
+    async def process_voice_transcription(self):
+        """Обрабатывает транскрипцию голоса"""
+        if not self.voice_handler:
+            return
+            
+        try:
+            # Показываем индикатор обработки
+            self.add_message_to_chat("🎤 Обрабатываю голосовое сообщение...", "system")
+            
+            # Транскрибируем аудио
+            transcription = await self.voice_handler.transcribe_audio()
+            
+            if transcription:
+                # Удаляем индикатор обработки
+                if self.chat_container and self.chat_container.controls:
+                    self.chat_container.controls.pop()  # Удаляем последнее сообщение
+                
+                # Добавляем транскрибированное сообщение
+                self.add_message_to_chat(f"🗣️ {transcription}", "user")
+                
+                # Отправляем сообщение в чат
+                await self.process_text_message(transcription)
+            else:
+                # Удаляем индикатор и показываем ошибку
+                if self.chat_container and self.chat_container.controls:
+                    self.chat_container.controls.pop()
+                self.add_message_to_chat("❌ Не удалось распознать речь. Попробуйте еще раз.", "system")
+                
+        except Exception as e:
+            print(f"Error processing voice transcription: {e}")
+            self.add_message_to_chat("❌ Ошибка обработки голоса.", "system")
+    
+    async def handle_voice_button_click(self, e):
+        """Обработчик нажатия кнопки записи голоса"""
+        if not self.voice_handler:
+            return
+            
+        if self.voice_handler.is_recording:
+            self.voice_handler.stop_recording()
+        else:
+            self.voice_handler.start_recording()
+    
+    async def play_ai_response_voice(self, text: str):
+        """Воспроизводит ответ ИИ голосом"""
+        if not self.voice_handler or not self.is_voice_mode:
+            return
+            
+        try:
+            # Показываем индикатор генерации речи
+            self.add_message_to_chat("🔊 Генерирую голосовой ответ...", "system")
+            
+            # Генерируем речь
+            audio_data = await self.voice_handler.text_to_speech(text)
+            
+            # Удаляем индикатор
+            if self.chat_container and self.chat_container.controls:
+                self.chat_container.controls.pop()
+            
+            if audio_data:
+                # Воспроизводим аудио
+                self.voice_handler.play_audio(audio_data)
+                self.add_message_to_chat("🔊 Воспроизвожу ответ...", "system")
+            else:
+                self.add_message_to_chat("❌ Не удалось сгенерировать голосовой ответ.", "system")
+                
+        except Exception as e:
+            print(f"Error playing AI voice response: {e}")
+            self.add_message_to_chat("❌ Ошибка воспроизведения голоса.", "system")
+
     def create_message_bubble(self, text, role):
         """Создает красивый пузырь сообщения в стиле WhatsApp"""
         
@@ -1162,9 +1333,18 @@ class ChatScreen:
         if not user_text:
             return
         
+        # Очищаем поле ввода
+        self.message_input.value = ""
+        self.page.update()
+        
+        # Обрабатываем текстовое сообщение
+        await self.process_text_message(user_text)
+    
+    async def process_text_message(self, user_text: str):
+        """Обрабатывает текстовое сообщение (из ввода или голоса)"""
         # Добавляем сообщение пользователя
         self.add_message_to_chat(user_text, "user")
-        
+
         # Предварительный анализ сообщения пользователя
         # Проверка на ненормативную лексику
         if self.language_filter.is_aggressive(user_text):
@@ -1199,9 +1379,6 @@ class ChatScreen:
                 raw_error_details=list(set(detected_russian_words)),
                 context={"scenario": self.scenario, "difficulty": self.difficulty}
             )
-
-        self.message_input.value = ""
-        self.page.update()
         
         # Проверка на выход
         if any(word in user_text.lower() for word in ["выход", "exit", "bye"]):
@@ -1250,6 +1427,10 @@ class ChatScreen:
             self.add_message_to_chat(answer, "assistant")
             self.messages.append({"role": "assistant", "content": answer})
             
+            # Воспроизводим голосовой ответ если включен голосовой режим
+            if self.is_voice_mode and VOICE_AVAILABLE:
+                await self.play_ai_response_voice(answer)
+            
             # Асинхронный анализ ошибок пользователя
             asyncio.create_task(
                 self.dialog_manager.analyze_and_save_detailed_user_errors(
@@ -1273,8 +1454,17 @@ class ChatScreen:
             self.dialog_manager.save_dialog(self.dialog_id, self.scenario, self.difficulty, self.messages)
             print(f"Dialog (ID: {self.dialog_id}) saved: {len(self.messages)} messages")
     
+    def close_dialog(self, dialog):
+        """Закрывает диалог"""
+        dialog.open = False
+        self.page.update()
+    
     def go_back(self, e):
         """Возвращается к стартовому экрану через экран итогов"""
+        # Очищаем голосовые ресурсы
+        if self.voice_handler:
+            self.voice_handler.cleanup()
+            
         self.save_dialog_on_completion()
         self.app.show_dialog_summary_screen(self.dialog_id, self.scenario, self.difficulty)
         self.hint_count = 0
@@ -1302,7 +1492,7 @@ class ChatScreen:
         header = ft.Container(
             content=ft.Row([
                 ft.IconButton(
-                    ft.icons.ARROW_BACK,
+                    ft.Icons.ARROW_BACK,
                     icon_color=ft.Colors.WHITE,
                     on_click=self.go_back,
                     tooltip="Назад"
@@ -1319,13 +1509,18 @@ class ChatScreen:
                         f"⚡ Сложность: {self.difficulty.upper()}",
                         size=12,
                         color=ft.Colors.with_opacity(0.70, ft.Colors.WHITE)
+                    ),
+                    ft.Text(
+                        f"🗣️ Режим: {'💬 Текст' if self.communication_mode == 'text' else '🎤 Голос'}",
+                        size=12,
+                        color=ft.Colors.with_opacity(0.70, ft.Colors.WHITE)
                     )
                 ], spacing=2),
                 ft.Container(expand=True),
                 self.hints_display,
                 ft.Container(width=10),
                 ft.IconButton(
-                    ft.icons.HELP_OUTLINE,
+                    ft.Icons.HELP_OUTLINE,
                     icon_color=ft.Colors.WHITE,
                     on_click=self.show_help
                 )
@@ -1367,7 +1562,7 @@ class ChatScreen:
         
         # Кнопка отправки
         send_button = ft.Container(
-            content=ft.Icon(ft.icons.SEND, color=ft.Colors.WHITE, size=24),
+            content=ft.Icon(ft.Icons.SEND, color=ft.Colors.WHITE, size=24),
             bgcolor="#25D366",
             border_radius=25,
             width=50,
@@ -1383,12 +1578,33 @@ class ChatScreen:
             )
         )
         
+        # Кнопка записи голоса (только для голосового режима)
+        input_buttons = [send_button]
+        
+        if self.is_voice_mode and VOICE_AVAILABLE:
+            self.voice_button = ft.Container(
+                content=ft.Icon(ft.Icons.MIC, color=ft.Colors.WHITE, size=24),
+                bgcolor="#4CAF50",
+                border_radius=25,
+                width=50,
+                height=50,
+                ink=True,
+                on_click=self.handle_voice_button_click,
+                alignment=ft.alignment.center,
+                tooltip="Начать запись",
+                shadow=ft.BoxShadow(
+                    spread_radius=1,
+                    blur_radius=5,
+                    color=ft.Colors.with_opacity(0.26, ft.Colors.BLACK),
+                    offset=ft.Offset(0, 2)
+                )
+            )
+            input_buttons.insert(0, self.voice_button)  # Добавляем перед кнопкой отправки
+            input_buttons.insert(1, ft.Container(width=10))  # Отступ между кнопками
+        
         # Панель ввода
-        input_row = ft.Row([
-            self.message_input,
-            ft.Container(width=10),
-            send_button
-        ], spacing=0)
+        input_row_controls = [self.message_input, ft.Container(width=10)] + input_buttons
+        input_row = ft.Row(input_row_controls, spacing=0)
         
         input_panel = ft.Container(
             content=input_row,
@@ -1421,4 +1637,4 @@ def main(page: ft.Page):
     # global_app_instance = app # Устанавливаем глобальную ссылку, если она нужна где-то еще
 
 if __name__ == '__main__':
-    ft.app(target=main) 
+    ft.app(target=main, view=ft.AppView.WEB_BROWSER, port=8550) 
