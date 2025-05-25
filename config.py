@@ -1,0 +1,2 @@
+# config.py
+OPENAI_API_KEY = "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"  # ← вставь сюда свой ключ
