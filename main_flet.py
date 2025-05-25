@@ -7,7 +7,7 @@ from templates import templates
 from dialog_manager import DialogManager
 from language_filter import LanguageFilter
 from prompts import get_system_prompt
-from help_system_flet import HelpDialog
+from help_system_flet import HelpSystem, HelpDialog
 from datetime import datetime
 import os
 
@@ -307,7 +307,7 @@ class EnglishLearningApp:
         self.page.controls.clear()
 
         summary_title = ft.Text("Диалог завершён!", size=30, weight=ft.FontWeight.BOLD, color="#075E54")
-        summary_details = ft.Text(f"Сценарий: {scenario}\\nСложность: {difficulty}", size=18, color="#333333", text_align=ft.TextAlign.CENTER)
+        summary_details = ft.Text(f"Сценарий: {scenario}\nСложность: {difficulty}", size=18, color="#333333", text_align=ft.TextAlign.CENTER)
 
         new_dialog_button = ft.ElevatedButton(
             content=ft.Text("🎉 Начать новый диалог", size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
@@ -564,9 +564,9 @@ class EnglishLearningApp:
 
         # Статистика
         stats_text = ft.Text(
-            f"📊 Результаты анализа:\\n"
-            f"• Проанализировано ошибок: {practice_session['total_errors_analyzed']}\\n"
-            f"• Ошибок для отработки: {practice_session['errors_for_practice']}\\n"
+            f"📊 Результаты анализа:\n"
+            f"• Проанализировано ошибок: {practice_session['total_errors_analyzed']}\n"
+            f"• Ошибок для отработки: {practice_session['errors_for_practice']}\n"
             f"• Создано упражнений: {practice_session['total_exercises']}",
             size=14,
             color="#2E7D32",
@@ -776,7 +776,7 @@ class EnglishLearningApp:
 
         # Determine content for the exercise text display
         exercise_display_content_value = self.format_exercise_content(exercise["content"], exercise["exercise_type"])
-        print(f"DEBUG: Card {number} - Formatted exercise content: '{exercise_display_content_value[:100]}...'")
+        print(f"DEBUG: Card {number} - Formatted exercise content: '{exercise_display_content_value[:100]}...' ")
 
 
         exercise_display_content = ft.Text(
@@ -1030,7 +1030,7 @@ class EnglishLearningApp:
             formatted_text = '\n'.join(lines)
             
             result = formatted_text if formatted_text.strip() else "Упражнение загружается..."
-            print(f"DEBUG: format_exercise_content RETURNING: '{result[:100]}...'")
+            print(f"DEBUG: format_exercise_content RETURNING: '{result[:100]}...' ")
             return result
             
         except Exception as e:
@@ -1050,13 +1050,13 @@ class EnglishLearningApp:
         
         content = "" # Initialize content
         if exercise_type == "word_replacement":
-            content = f"Исправьте ошибку в следующем предложении:\\n\\n" \
-                     f"Неправильно: {original_error}\\n" \
+            content = f"Исправьте ошибку в следующем предложении:\n\n" \
+                     f"Неправильно: {original_error}\n" \
                      f"Напишите правильный вариант:"
                      
         elif exercise_type == "translation_en_ru":
-            content = f"Переведите на русский язык:\\n\\n" \
-                     f"{correct_form}\\n\\n" \
+            content = f"Переведите на русский язык:\n\n" \
+                     f"{correct_form}\n\n" \
                      f"Ваш перевод:"
                      
         elif exercise_type == "translation_ru_en":
@@ -1748,6 +1748,6 @@ def main(page: ft.Page):
 
 if __name__ == '__main__':
     print("DEBUG: Starting Flet app...")
-    ft.app(target=main, view=ft.AppView.WEB_BROWSER, port=8550, host="0.0.0.0") # Added host for Docker
+    ft.app(target=main, view=ft.AppView.WEB_BROWSER, port=8550, host="0.0.0.0")
 
 </rewritten_file> 
