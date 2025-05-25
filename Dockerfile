@@ -4,6 +4,11 @@ FROM python:3.11-slim
 # Устанавливаем рабочую директорию в контейнере
 WORKDIR /app
 
+# Установить зависимости для сборки C расширений
+RUN apt-get update && \
+    apt-get install -y gcc libportaudio2 libportaudiocpp0 portaudio19-dev && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # Копируем файл с зависимостями и устанавливаем их
 # Убедитесь, что flet и другие зависимости есть в requirements.txt
 COPY requirements.txt .
@@ -22,4 +27,4 @@ EXPOSE 8550
 # ft.app(target=main, view=ft.AppView.WEB_BROWSER, port=8550, host="0.0.0.0")
 # или аналогичный запуск для веб-режима.
 # Параметр --host 0.0.0.0 нужен, чтобы приложение было доступно извне контейнера.
-CMD ["python", "main_flet.py"] 
+CMD ["python", "main_flet.py"]
