@@ -4,8 +4,9 @@ FROM python:3.11-slim
 # Устанавливем рабочую директорию в контейнере
 WORKDIR /app
 
-# Установить зависимости для сборки C расширений
+# Установить apt-utils и зависимости для сборки C расширений
 RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y apt-utils && \
     apt-get install -y gcc libportaudio2 libportaudiocpp0 portaudio19-dev python3-venv && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
