@@ -26,20 +26,22 @@ class HelpSystem:
         Контекст диалога:
         Сценарий: {scenario}
         Сложность: {difficulty}
-        Последние сообщения:
+        Последние сообщения (роль AI - это собеседник, роль Пользователь - это изучающий):
         {context}
         
-        Сообщение от AI для перевода: "{last_ai_message_content}"
+        Последнее сообщение от AI (собеседника): "{last_ai_message_content}"
         
-        Предоставь помощь в формате:
+        Пожалуйста, предоставь помощь на русском языке в следующем формате:
         
         ПЕРЕВОД:
-        [Перевод последнего сообщения AI на русский язык]
+        [Здесь дай точный перевод ПОСЛЕДНЕГО СООБЩЕНИЯ ОТ AI ({last_ai_message_content}) на русский язык. Будь точным.]
         
-        ВАРИАНТЫ_ОТВЕТОВ:
-        1. [Простой ответ на английском]
-        2. [Средний ответ на английском] 
-        3. [Продвинутый ответ на английском]
+        ВАРИАНТЫ ОТВЕТА ПОЛЬЗОВАТЕЛЯ:
+        [Напиши здесь ТРИ РАЗНЫХ варианта, как ПОЛЬЗОВАТЕЛЬ мог бы ОТВЕТИТЬ на ПОСЛЕДНЕЕ СООБЩЕНИЕ ОТ AI ("{last_ai_message_content}") на английском языке. 
+        Предложи варианты разной степени сложности или стиля, если это уместно. Например:
+        1. [Простой вариант ответа на английском]
+        2. [Более развернутый или вежливый вариант ответа на английском] 
+        3. [Вариант ответа, использующий более сложную лексику или грамматику на английском]]
         """
         
         try:
@@ -70,16 +72,30 @@ class HelpSystem:
             line = line.strip()
             if line.startswith("ПЕРЕВОД:"):
                 current_section = "translation"
+                # Берем все, что после "ПЕРЕВОД:", до следующей секции или конца файла
                 result["translation"] = line.replace("ПЕРЕВОД:", "").strip()
-            elif line.startswith("ВАРИАНТЫ_ОТВЕТОВ:"):
+            elif line.startswith("ВАРИАНТЫ ОТВЕТА ПОЛЬЗОВАТЕЛЯ:"):
                 current_section = "answers"
-            elif current_section == "translation" and line:
-                result["translation"] += " " + line
+                # Сбрасываем строку, если она была частью заголовка
+                if "ВАРИАНТЫ ОТВЕТА ПОЛЬЗОВАТЕЛЯ:" in line and len(line.replace("ВАРИАНТЫ ОТВЕТА ПОЛЬЗОВАТЕЛЯ:", "").strip()) > 0:
+                    potential_answer = line.replace("ВАРИАНТЫ ОТВЕТА ПОЛЬЗОВАТЕЛЯ:", "").strip()
+                    if potential_answer and (potential_answer.startswith("1.") or potential_answer.startswith("2.") or potential_answer.startswith("3.")):
+                         result["answer_options"].append(potential_answer[2:].strip())
+            elif current_section == "translation" and line and not (line.startswith("ВАРИАНТЫ ОТВЕТА ПОЛЬЗОВАТЕЛЯ:") or line.startswith("1.") or line.startswith("2.") or line.startswith("3.")):
+                # Продолжаем собирать перевод, если он многострочный
+                if result["translation"]: # Добавляем пробел, если уже что-то есть
+                     result["translation"] += " " + line
+                else:
+                     result["translation"] = line
             elif current_section == "answers" and line and (line.startswith("1.") or line.startswith("2.") or line.startswith("3.")):
                 answer = line[2:].strip()
                 if answer:
                     result["answer_options"].append(answer)
         
+        # Очистка пустых строк из переводов, если они случайно попали
+        if isinstance(result["translation"], str):
+            result["translation"] = result["translation"].strip()
+
         return result
     
     async def generate_cultural_context(self, ai_message, scenario, difficulty):
@@ -141,13 +157,16 @@ class HelpDialog:
                 "Вы использовали все доступные подсказки для этого уровня сложности")
             return False
         
-        # Генерируем помощь
+        # Генерируем помощь (убираем кеширование - всегда свежий контент)
         loading_dialog = self.create_loading_dialog()
         self.page.dialog = loading_dialog
         loading_dialog.open = True
         self.page.update()
         
         try:
+            # Сбрасываем предыдущие данные помощи
+            self.current_help_data = None
+            
             self.current_help_data = await self.help_system.generate_help_content(
                 self.chat_screen.messages,
                 self.chat_screen.scenario,
@@ -157,6 +176,14 @@ class HelpDialog:
             loading_dialog.open = False
             
             if self.current_help_data and "error" not in self.current_help_data:
+                # Проверяем, что перевод действительно есть
+                translation = self.current_help_data.get("translation", "").strip()
+                if not translation or translation == "Перевод недоступен":
+                    print(f"DEBUG: Translation issue - current_help_data: {self.current_help_data}")
+                    await self.show_info_dialog("⚠️ Проблема", 
+                        "Не удалось получить перевод. Попробуйте еще раз.")
+                    return False
+                
                 help_dialog = self.create_help_dialog()
                 self.page.dialog = help_dialog
                 help_dialog.open = True
@@ -169,12 +196,13 @@ class HelpDialog:
                     
                 return True
             else:
-                await self.show_info_dialog("❌ Ошибка", 
-                    self.current_help_data.get("error", "Неизвестная ошибка"))
+                error_msg = self.current_help_data.get("error", "Неизвестная ошибка") if self.current_help_data else "Не удалось сгенерировать помощь"
+                await self.show_info_dialog("❌ Ошибка", error_msg)
                 return False
                 
         except Exception as e:
             loading_dialog.open = False
+            print(f"DEBUG: Exception in show_help_dialog: {e}")
             await self.show_info_dialog("❌ Ошибка", f"Ошибка генерации: {e}")
             return False
     
@@ -346,6 +374,15 @@ class HelpDialog:
                 self.chat_screen.difficulty
             )
             loading.open = False
+            
+            # Логируем запрос и ответ
+            self.chat_screen.dialog_manager.save_help_request(
+                dialog_id=self.chat_screen.dialog_id,
+                request_type="cultural_context",
+                user_input=f"Cultural context for: {last_ai_message[:100]}...", # Оригинальный запрос пользователя здесь не так ясен, берем часть сообщения AI
+                ai_response=context,
+                context={"scenario": self.chat_screen.scenario, "difficulty": self.chat_screen.difficulty}
+            )
             await self.show_info_dialog("🌍 Культурный контекст", context)
         except Exception as ex:
             loading.open = False
@@ -375,6 +412,15 @@ class HelpDialog:
                 self.chat_screen.difficulty
             )
             loading.open = False
+            
+            # Логируем запрос и ответ
+            self.chat_screen.dialog_manager.save_help_request(
+                dialog_id=self.chat_screen.dialog_id,
+                request_type="grammar_analysis",
+                user_input=f"Grammar analysis for: {last_ai_message[:100]}...",
+                ai_response=analysis,
+                context={"scenario": self.chat_screen.scenario, "difficulty": self.chat_screen.difficulty}
+            )
             await self.show_info_dialog("📚 Грамматический анализ", analysis)
         except Exception as ex:
             loading.open = False
@@ -420,6 +466,15 @@ class HelpDialog:
                 
                 answer = response.choices[0].message.content
                 loading.open = False
+                
+                # Логируем вопрос и ответ ассистента
+                self.chat_screen.dialog_manager.save_help_request(
+                    dialog_id=self.chat_screen.dialog_id,
+                    request_type="assistant_question",
+                    user_input=question,
+                    ai_response=answer,
+                    context={"scenario": self.chat_screen.scenario, "difficulty": self.chat_screen.difficulty}
+                )
                 await self.show_info_dialog("🤖 Ответ помощника", answer)
                 
             except Exception as ex:
