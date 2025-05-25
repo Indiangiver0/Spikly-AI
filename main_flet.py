@@ -245,8 +245,11 @@ class EnglishLearningApp:
     
     def on_selection_change(self, e):
         """Обработчик изменения выбора - активирует кнопку если все выбрано"""
+        print("DEBUG: on_selection_change entered")
+        print(f"DEBUG: Scenario: {self.scenario_dropdown.value}, Difficulty: {self.difficulty_dropdown.value}, Communication: {self.communication_dropdown.value}")
         # Проверяем выбраны ли и сценарий и сложность
         if self.scenario_dropdown.value and self.difficulty_dropdown.value and self.communication_dropdown.value:
+            print("DEBUG: All selections made. Enabling button.")
             # Активируем кнопку - делаем яркой и кликабельной
             self.start_button.bgcolor = "#25D366"  # Яркий зеленый
             self.start_button.disabled = False  # Можно кликать
@@ -254,6 +257,7 @@ class EnglishLearningApp:
             self.start_button.style.shadow_color = ft.Colors.with_opacity(0.40, ft.Colors.BLACK)
             self.start_button.style.elevation = 8
         else:
+            print("DEBUG: Not all selections made. Disabling button.")
             # Деактивируем кнопку - делаем серой
             self.start_button.bgcolor = "#CCCCCC"  # Серая
             self.start_button.disabled = True  # Не кликается
@@ -261,11 +265,15 @@ class EnglishLearningApp:
             self.start_button.style.shadow_color = ft.Colors.with_opacity(0.20, ft.Colors.BLACK)
             self.start_button.style.elevation = 2
         
+        print(f"DEBUG: Button disabled: {self.start_button.disabled}, Button on_click: {self.start_button.on_click}")
         self.page.update()
     
     def start_dialog(self, e):
         """Обработчик начала диалога"""
+        print("DEBUG: start_dialog entered")
+        print(f"DEBUG: Scenario: {self.scenario_dropdown.value}, Difficulty: {self.difficulty_dropdown.value}, Communication: {self.communication_dropdown.value}")
         if not self.scenario_dropdown.value or not self.difficulty_dropdown.value or not self.communication_dropdown.value:
+            print("DEBUG: start_dialog - not all values selected, returning.")
             return
         
         # Очищаем файлы практик при начале нового диалога
@@ -1750,3 +1758,4 @@ if __name__ == '__main__':
     print("DEBUG: Starting Flet app...")
     ft.app(target=main, view=ft.AppView.WEB_BROWSER, port=8550, host="0.0.0.0")
 
+</rewritten_file> 
